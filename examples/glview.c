@@ -285,7 +285,7 @@ void *gl_threadfunc(void *arg)
 	return NULL;
 }
 
-uint16_t t_gamma[2048];
+uint16_t t_gamma[10000];
 
 void depth_cb(freenect_device *dev, void *v_depth, uint32_t timestamp)
 {
@@ -294,8 +294,8 @@ void depth_cb(freenect_device *dev, void *v_depth, uint32_t timestamp)
 
 	pthread_mutex_lock(&gl_backbuf_mutex);
 	for (i=0; i<640*480; i++) {
-		if (depth[i] >= 2048) continue;
-		int pval = t_gamma[depth[i]];
+		//if (depth[i] >= 2048) continue;
+		int pval = t_gamma[depth[i]] / 4;
 		int lb = pval & 0xff;
 		depth_mid[4*i+3] = 128; // default alpha value
 		if (depth[i] ==  0) depth_mid[4*i+3] = 0; // remove anything without depth value
@@ -428,7 +428,7 @@ int main(int argc, char **argv)
 	printf("Kinect camera test\n");
 
 	int i;
-	for (i=0; i<2048; i++) {
+	for (i=0; i<10000; i++) {
 		float v = i/2048.0;
 		v = powf(v, 3)* 6;
 		t_gamma[i] = v*6*256;

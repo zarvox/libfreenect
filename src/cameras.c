@@ -1219,10 +1219,10 @@ freenect_zero_plane_info freenect_get_zero_plane_info(freenect_device *dev) {
 	freenect_context *ctx = dev->parent;
 
 	char reply[0x200];
-	uint16_t cmd = 0; // Offset is the only field in this command
+	uint16_t cmd[5] = {0}; // Offset is the only field in this command
 
 	int res;
-	res = send_cmd(dev, 0x04, &cmd, 10, reply, 322); //OPCODE_GET_FIXED_PARAMS = 4,
+	res = send_cmd(dev, 0x04, cmd, 10, reply, 322); //OPCODE_GET_FIXED_PARAMS = 4,
 	FN_DEBUG("res = %d\n", res);
 
 	int i;
