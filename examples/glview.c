@@ -76,7 +76,11 @@ pthread_cond_t gl_frame_cond = PTHREAD_COND_INITIALIZER;
 int got_rgb = 0;
 int got_depth = 0;
 
-void DrawGLScene()
+int frame = 0;
+int ftime = 0;
+double fps = 0;
+
+void idle()
 {
 	pthread_mutex_lock(&gl_backbuf_mutex);
 
@@ -92,10 +96,14 @@ void DrawGLScene()
 		}
 	}
 
-	if (requested_format != current_format) {
+	if (!got_depth || !got_rgb || requested_format != current_format) {
 		pthread_mutex_unlock(&gl_backbuf_mutex);
 		return;
 	}
+	glutPostRedisplay();
+}
+
+void DrawGLScene() {
 
 	uint8_t *tmp;
 
@@ -140,6 +148,13 @@ void DrawGLScene()
 	glEnd();
 
 	glutSwapBuffers();
+
+	frame++;
+	if (frame % 30 == 0) {
+		int ms = glutGet(GLUT_ELAPSED_TIME);
+		fps = 30.0/((ms-ftime)/1000.0);
+		ftime = ms;
+	}
 }
 
 void keyPressed(unsigned char key, int x, int y)
@@ -147,6 +162,7 @@ void keyPressed(unsigned char key, int x, int y)
 	if (key == 27) {
 		die = 1;
 		pthread_join(freenect_thread, NULL);
+		pthread_cond_signal(&gl_frame_cond);
 		glutDestroyWindow(window);
 		free(depth_mid);
 		free(depth_front);
@@ -258,7 +274,7 @@ void *gl_threadfunc(void *arg)
 	window = glutCreateWindow("LibFreenect");
 
 	glutDisplayFunc(&DrawGLScene);
-	glutIdleFunc(&DrawGLScene);
+	glutIdleFunc(&idle);
 	glutReshapeFunc(&ReSizeGLScene);
 	glutKeyboardFunc(&keyPressed);
 
@@ -278,12 +294,11 @@ void depth_cb(freenect_device *dev, void *v_depth, uint32_t timestamp)
 
 	pthread_mutex_lock(&gl_backbuf_mutex);
 	for (i=0; i<640*480; i++) {
+		if (depth[i] >= 2048) continue;
 		int pval = t_gamma[depth[i]];
 		int lb = pval & 0xff;
 		depth_mid[4*i+3] = 128; // default alpha value
 		if (depth[i] ==  0) depth_mid[4*i+3] = 0; // remove anything without depth value
-		//if (i == 153920) printf("depth in mm: %d\n",depth[i]); // debugging output
-		//if (depth[i] > 700) depth_mid[4*i+3] = 0;
 		switch (pval>>8) {
 			case 0:
 				depth_mid[4*i+0] = 255;
@@ -355,6 +370,7 @@ void *freenect_threadfunc(void *arg)
 	freenect_set_depth_mode(f_dev, freenect_find_depth_mode(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_REGISTERED));
 	freenect_set_video_buffer(f_dev, rgb_back);
 
+	// call after freenect_set_video_mode
 	freenect_init_registration(f_dev,NULL);
 
 	freenect_start_depth(f_dev);
@@ -362,7 +378,9 @@ void *freenect_threadfunc(void *arg)
 
 	printf("'w'-tilt up, 's'-level, 'x'-tilt down, '0'-'6'-select LED mode, 'f'-video format\n");
 
-	while (!die && freenect_process_events(f_ctx) >= 0) {
+	while (!die) {
+		int res = freenect_process_events(f_ctx);
+		if (res < 0 && res != -10) { printf("\nError %d received from libusb - aborting.\n",res); break; }
 		//Throttle the text output
 		if (accelCount++ >= 2000)
 		{
@@ -373,6 +391,7 @@ void *freenect_threadfunc(void *arg)
 			double dx,dy,dz;
 			freenect_get_mks_accel(state, &dx, &dy, &dz);
 			printf("\r raw acceleration: %4d %4d %4d  mks acceleration: %4f %4f %4f", state->accelerometer_x, state->accelerometer_y, state->accelerometer_z, dx, dy, dz);
+			printf(" fps %4f  usb_res: %d    ",fps,res);
 			fflush(stdout);
 		}
 
