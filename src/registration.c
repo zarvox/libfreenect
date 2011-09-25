@@ -307,6 +307,9 @@ int freenect_init_registration(freenect_device* dev, freenect_registration* reg)
 		reg->zero_plane_info = freenect_get_zero_plane_info( dev );
 	}
 
+	// FIXME: OpenNI seems to use a hardcoded value of 2.4 instead of 2.3 as reported by Kinect
+	reg->zero_plane_info.dcmos_rcmos_dist = 2.4;
+
 	// TODO: determine why this ugly hack had a positive effect for low distances
 	// for very unclear reasons, setting this value to -0.5
 	// results in a much more accurate depth -> RGB X shift
