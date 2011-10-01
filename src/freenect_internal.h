@@ -189,6 +189,9 @@ struct _freenect_device {
 	packet_stream depth;
 	packet_stream video;
 
+	// Registration
+	freenect_registration registration;
+
 #ifdef BUILD_AUDIO
 	// Audio
 	fnusb_dev usb_audio;

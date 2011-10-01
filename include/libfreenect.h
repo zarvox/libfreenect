@@ -77,6 +77,7 @@ typedef enum {
 	FREENECT_DEPTH_10BIT        = 1, /**< 10 bit depth information in one uint16_t/pixel */
 	FREENECT_DEPTH_11BIT_PACKED = 2, /**< 11 bit packed depth information */
 	FREENECT_DEPTH_10BIT_PACKED = 3, /**< 10 bit packed depth information */
+	FREENECT_DEPTH_REGISTERED   = 4, /**< processed depth data in mm, aligned to 640x480 RGB */
 	FREENECT_DEPTH_DUMMY        = 2147483647, /**< Dummy value to force enum to be 32 bits wide */
 } freenect_depth_format;
 
@@ -128,6 +129,84 @@ typedef struct {
 	int8_t                    tilt_angle;      /**< Raw tilt motor angle encoder information */
 	freenect_tilt_status_code tilt_status;     /**< State of the tilt motor (stopped, moving, etc...) */
 } freenect_raw_tilt_state;
+
+
+/// internal Kinect registration parameters
+typedef struct {
+
+	int32_t dx_center; // not used by mapping algorithm
+
+	int32_t ax;
+	int32_t bx;
+	int32_t cx;
+	int32_t dx;
+
+	int32_t dx_start;
+
+	int32_t ay;
+	int32_t by;
+	int32_t cy;
+	int32_t dy;
+
+	int32_t dy_start;
+
+	int32_t dx_beta_start;
+	int32_t dy_beta_start;
+
+	int32_t rollout_blank; // not used by mapping algorithm
+	int32_t rollout_size;  // not used by mapping algorithm
+
+	int32_t dx_beta_inc;
+	int32_t dy_beta_inc;
+
+	int32_t dxdx_start;
+	int32_t dxdy_start;
+	int32_t dydx_start;
+	int32_t dydy_start;
+
+	int32_t dxdxdx_start;
+	int32_t dydxdx_start;
+	int32_t dxdxdy_start;
+	int32_t dydxdy_start;
+
+	int32_t back_comp1; // not used by mapping algorithm
+
+	int32_t dydydx_start;
+
+	int32_t back_comp2; // not used by mapping algorithm
+
+	int32_t dydydy_start;
+
+} freenect_reg_info;
+
+/// registration padding info (?) 
+typedef struct {
+	uint16_t start_lines;
+	uint16_t end_lines;
+	uint16_t cropping_lines;
+} freenect_reg_pad_info;
+
+/// internal Kinect zero plane data
+typedef struct {
+	float dcmos_emitter_dist;
+	float dcmos_rcmos_dist;
+	float reference_distance;
+	float reference_pixel_size;
+} freenect_zero_plane_info;
+
+/// all data needed for depth->RGB mapping
+typedef struct {
+
+	freenect_reg_info        reg_info;
+	freenect_reg_pad_info    reg_pad_info;
+	freenect_zero_plane_info zero_plane_info;
+
+	uint16_t* raw_to_mm_shift;
+	int32_t*  depth_to_rgb_shift;
+	int32_t (*registration_table)[2];
+
+} freenect_registration;
+
 
 struct _freenect_context;
 typedef struct _freenect_context freenect_context; /**< Holds information about the usb context. */
@@ -540,6 +619,31 @@ FREENECTAPI const freenect_frame_mode freenect_find_depth_mode(freenect_resoluti
  * @return 0 on success, < 0 if error
  */
 FREENECTAPI int freenect_set_depth_mode(freenect_device* dev, const freenect_frame_mode mode);
+
+/**
+ * Initialize a registration data structure: get data from device, allocate and initialize tables
+ *
+ * @param dev Device to use
+ * @param reg freenect_registration structure to fill
+ *
+ * @return 0 on success, < 0 on error
+ */
+FREENECTAPI int freenect_init_registration(freenect_device* dev, freenect_registration* reg);
+
+/**
+ * Apply registration data structure to a raw depth image
+ *
+ * @param reg       freenect_registration structure to use
+ * @param input_raw buffer of raw 16-bit disparity values
+ * @param output_mm result buffer with 16-bit values in mm
+ *
+ * @return 0 on success, < 0 on error
+ */
+FREENECTAPI int freenect_apply_registration(freenect_registration* reg, uint8_t* input_packed, uint16_t* output_mm);
+
+FREENECTAPI freenect_reg_info freenect_get_reg_info(freenect_device* dev);
+FREENECTAPI freenect_reg_pad_info freenect_get_reg_pad_info(freenect_device* dev);
+FREENECTAPI freenect_zero_plane_info freenect_get_zero_plane_info(freenect_device* dev);
 
 #ifdef __cplusplus
 }

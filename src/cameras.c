@@ -58,13 +58,14 @@ freenect_frame_mode supported_video_modes[video_mode_count] = {
 	{MAKE_RESERVED(FREENECT_RESOLUTION_MEDIUM, FREENECT_VIDEO_YUV_RAW), FREENECT_RESOLUTION_MEDIUM, {FREENECT_VIDEO_YUV_RAW}, 640*480*2, 640, 480, 16, 0, 15, 1 },
 };
 
-#define depth_mode_count 4
+#define depth_mode_count 5
 freenect_frame_mode supported_depth_modes[depth_mode_count] = {
 	// reserved, resolution, format, bytes, width, height, data_bits_per_pixel, padding_bits_per_pixel, framerate, is_valid
 	{MAKE_RESERVED(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_11BIT), FREENECT_RESOLUTION_MEDIUM, {FREENECT_DEPTH_11BIT}, 640*480*2, 640, 480, 11, 5, 30, 1},
 	{MAKE_RESERVED(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_10BIT), FREENECT_RESOLUTION_MEDIUM, {FREENECT_DEPTH_10BIT}, 640*480*2, 640, 480, 10, 6, 30, 1},
 	{MAKE_RESERVED(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_11BIT_PACKED), FREENECT_RESOLUTION_MEDIUM, {FREENECT_DEPTH_11BIT_PACKED}, 640*480*11/8, 640, 480, 11, 0, 30, 1},
 	{MAKE_RESERVED(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_10BIT_PACKED), FREENECT_RESOLUTION_MEDIUM, {FREENECT_DEPTH_10BIT_PACKED}, 640*480*10/8, 640, 480, 10, 0, 30, 1},
+	{MAKE_RESERVED(FREENECT_RESOLUTION_MEDIUM, FREENECT_DEPTH_REGISTERED), FREENECT_RESOLUTION_MEDIUM, {FREENECT_DEPTH_REGISTERED}, 640*480*2, 640, 480, 16, 0, 30, 1},
 };
 static const freenect_frame_mode invalid_mode = {0, (freenect_resolution)0, {(freenect_video_format)0}, 0, 0, 0, 0, 0, 0, 0};
 
@@ -380,6 +381,9 @@ static void depth_process(freenect_device *dev, uint8_t *pkt, int len)
 	switch (dev->depth_format) {
 		case FREENECT_DEPTH_11BIT:
 			convert_packed11_to_16bit(dev->depth.raw_buf, (uint16_t*)dev->depth.proc_buf, 640*480);
+			break;
+		case FREENECT_DEPTH_REGISTERED:
+			freenect_apply_registration( &(dev->registration), dev->depth.raw_buf, (uint16_t*)dev->depth.proc_buf );
 			break;
 		case FREENECT_DEPTH_10BIT:
 			convert_packed_to_16bit(dev->depth.raw_buf, (uint16_t*)dev->depth.proc_buf, 10, 640*480);
@@ -768,6 +772,7 @@ int freenect_start_depth(freenect_device *dev)
 
 	switch (dev->depth_format) {
 		case FREENECT_DEPTH_11BIT:
+		case FREENECT_DEPTH_REGISTERED:
 			stream_init(ctx, &dev->depth, freenect_find_depth_mode(dev->depth_resolution, FREENECT_DEPTH_11BIT_PACKED).bytes, freenect_find_depth_mode(dev->depth_resolution, FREENECT_DEPTH_11BIT).bytes);
 			break;
 		case FREENECT_DEPTH_10BIT:
@@ -791,6 +796,7 @@ int freenect_start_depth(freenect_device *dev)
 	switch (dev->depth_format) {
 		case FREENECT_DEPTH_11BIT:
 		case FREENECT_DEPTH_11BIT_PACKED:
+		case FREENECT_DEPTH_REGISTERED:
 			write_register(dev, 0x12, 0x03);
 			break;
 		case FREENECT_DEPTH_10BIT:
@@ -1135,3 +1141,107 @@ int freenect_set_video_buffer(freenect_device *dev, void *buf)
 	return stream_setbuf(dev->parent, &dev->video, buf);
 }
 
+freenect_reg_info freenect_get_reg_info(freenect_device *dev) {
+	freenect_reg_info retval;
+	freenect_context *ctx = dev->parent;
+	char reply[0x200];
+	uint16_t cmd[5];
+	freenect_frame_mode mode = freenect_get_current_video_mode(dev);
+	cmd[0] = 0x40; // ParamID
+	cmd[1] = 0; // Format
+	cmd[2] = (uint16_t)mode.resolution; // Resolution
+	cmd[3] = (uint16_t)mode.framerate; // FPS
+	cmd[4] = 0; // Offset
+
+	int res;
+	res = send_cmd(dev, 0x16, cmd, 10, reply, 118); // OPCODE_ALGORITHM_PARAMS
+	if(res != 118) {
+		FN_ERROR("freenect_get_reg_info: send_cmd read %d bytes (expected 118)\n", res);
+	}
+	retval = *(freenect_reg_info*)(&reply[2]);
+	FN_DEBUG("ax:                %d\n", retval.ax);
+	FN_DEBUG("bx:                %d\n", retval.bx);
+	FN_DEBUG("cx:                %d\n", retval.cx);
+	FN_DEBUG("dx:                %d\n", retval.dx);
+	FN_DEBUG("ay:                %d\n", retval.ay);
+	FN_DEBUG("by:                %d\n", retval.by);
+	FN_DEBUG("cy:                %d\n", retval.cy);
+	FN_DEBUG("dy:                %d\n", retval.dy);
+	FN_DEBUG("dx_start:          %d\n", retval.dx_start);
+	FN_DEBUG("dy_start:          %d\n", retval.dy_start);
+	FN_DEBUG("dx_beta_start:     %d\n", retval.dx_beta_start);
+	FN_DEBUG("dy_beta_start:     %d\n", retval.dy_beta_start);
+	FN_DEBUG("dx_beta_inc:       %d\n", retval.dx_beta_inc);
+	FN_DEBUG("dy_beta_inc:       %d\n", retval.dy_beta_inc);
+	FN_DEBUG("dxdx_start:        %d\n", retval.dxdx_start);
+	FN_DEBUG("dxdy_start:        %d\n", retval.dxdy_start);
+	FN_DEBUG("dydx_start:        %d\n", retval.dydx_start);
+	FN_DEBUG("dydy_start:        %d\n", retval.dydy_start);
+	FN_DEBUG("dxdxdx_start:      %d\n", retval.dxdxdx_start);
+	FN_DEBUG("dydxdx_start:      %d\n", retval.dydxdx_start);
+	FN_DEBUG("dxdxdy_start:      %d\n", retval.dxdxdy_start);
+	FN_DEBUG("dydxdy_start:      %d\n", retval.dydxdy_start);
+	FN_DEBUG("dydydx_start:      %d\n", retval.dydydx_start);
+	FN_DEBUG("dydydy_start:      %d\n", retval.dydydy_start);
+	/*FN_DEBUG("dx_CENTER:         %d\n", retval.dx_CENTER);
+	FN_DEBUG("nRGS_ROLLOUT_BLANK:     %d\n", retval.nRGS_ROLLOUT_BLANK);
+	FN_DEBUG("nRGS_ROLLOUT_SIZE:      %d\n", retval.nRGS_ROLLOUT_SIZE);
+	FN_DEBUG("nBACK_COMP1:            %d\n", retval.nBACK_COMP1);
+	FN_DEBUG("nBACK_COMP2:            %d\n", retval.nBACK_COMP2);*/
+	return retval;
+}
+
+freenect_reg_pad_info freenect_get_reg_pad_info(freenect_device *dev) {
+	freenect_reg_pad_info retval;
+	freenect_context *ctx = dev->parent;
+	char reply[0x200];
+	uint16_t cmd[5];
+	freenect_frame_mode mode = freenect_get_current_video_mode(dev);
+	cmd[0] = 0x41; // ParamID
+	cmd[1] = 0; // Format
+	cmd[2] = (uint16_t)mode.resolution; // Resolution
+	cmd[3] = (uint16_t)mode.framerate; // FPS
+	cmd[4] = 0; // Offset
+	int res;
+	res = send_cmd(dev, 0x16, cmd, 10, reply, 8); // OPCODE_ALGORITHM_PARAMS
+	if(res != 8) {
+		FN_ERROR("freenect_get_reg_pad_info: send_cmd read %d bytes (expected 8)\n", res);
+	}
+	retval = *(freenect_reg_pad_info*)(&reply[2]);
+	FN_DEBUG("start_lines:    %u\n",retval.start_lines);
+	FN_DEBUG("end_lines:      %u\n",retval.end_lines);
+	FN_DEBUG("cropping_lines: %u\n",retval.cropping_lines);
+	return retval;
+}
+
+freenect_zero_plane_info freenect_get_zero_plane_info(freenect_device *dev) {
+	freenect_zero_plane_info retval;
+	freenect_context *ctx = dev->parent;
+
+	char reply[0x200];
+	uint16_t cmd[5] = {0}; // Offset is the only field in this command
+
+	int res;
+	res = send_cmd(dev, 0x04, cmd, 10, reply, 322); //OPCODE_GET_FIXED_PARAMS = 4,
+	FN_DEBUG("res = %d\n", res);
+
+	int i;
+	for(i = 0; i < res; i++) {
+		FN_DEBUG("%02X", reply[i] & 0xff);
+		if(i % 4 == 1)
+			FN_DEBUG(" ");
+	}
+	FN_DEBUG("\n");
+	// WTF is all this data?  it's way bigger than sizeof(XnFixedParams)...
+	FN_DEBUG("dcmos_emitter_distance: %f\n", *((float*)(reply+94)));
+	FN_DEBUG("dcmos_rcmos_distance:   %f\n", *((float*)(reply+98)));
+	FN_DEBUG("reference_distance:     %f\n", *((float*)(reply+102)));
+	FN_DEBUG("reference_pixel_size:   %f\n", *((float*)(reply+106)));
+
+	retval.dcmos_emitter_dist   = *((float*)(reply+94));
+	retval.dcmos_rcmos_dist     = *((float*)(reply+98));
+	retval.reference_distance   = *((float*)(reply+102));
+	retval.reference_pixel_size = *((float*)(reply+106));
+
+	return retval;
+}
