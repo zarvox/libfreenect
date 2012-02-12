@@ -903,13 +903,27 @@ static int freenect_fetch_zero_plane_info(freenect_device *dev)
 	uint16_t cmd[5] = {0}; // Offset is the only field in this command, and it's 0
 
 	int res;
-	res = send_cmd(dev, 0x04, cmd, 10, reply, 322); //OPCODE_GET_FIXED_PARAMS = 4,
-	if (res != 322) {
-		FN_ERROR("freenect_fetch_zero_plane_info: send_cmd read %d bytes (expected 322)\n", res);
+
+	int expected_len = 0;
+	int struct_offset = 0;
+	switch(dev->hwrev) {
+		case HWREV_XBOX360_0:
+			expected_len = 322;
+			struct_offset = 94;
+			break;
+		case HWREV_K4W_0:
+			expected_len = 334;
+			struct_offset = 94;
+			break;
+	}
+
+	res = send_cmd(dev, 0x04, cmd, 10, reply, expected_len); //OPCODE_GET_FIXED_PARAMS = 4,
+	if (res != expected_len) {
+		FN_ERROR("freenect_fetch_zero_plane_info: send_cmd read %d bytes (expected %d)\n", res, expected_len);
 		return -1;
 	}
 
-	memcpy(&(dev->registration.zero_plane_info), reply + 94, sizeof(dev->registration.zero_plane_info));
+	memcpy(&(dev->registration.zero_plane_info), reply + struct_offset, sizeof(dev->registration.zero_plane_info));
 	union {
 		uint32_t ui;
 		float f;
@@ -1261,7 +1275,8 @@ int freenect_set_video_mode(freenect_device* dev, const freenect_frame_mode mode
 	dev->video_resolution = res;
 	// Now that we've changed video format and resolution, we need to update
 	// registration tables.
-	freenect_fetch_reg_info(dev);
+	if (res == FREENECT_RESOLUTION_MEDIUM)
+		freenect_fetch_reg_info(dev);
 	return 0;
 }
 

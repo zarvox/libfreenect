@@ -68,7 +68,6 @@ GLuint gl_rgb_tex;
 
 freenect_context *f_ctx;
 freenect_device *f_dev;
-int freenect_led;
 
 freenect_video_format requested_format = FREENECT_VIDEO_RGB;
 freenect_video_format current_format = FREENECT_VIDEO_RGB;
@@ -360,7 +359,6 @@ void video_cb(freenect_device *dev, void *rgb, uint32_t timestamp)
 
 void *freenect_threadfunc(void *arg)
 {
-	freenect_set_led(f_dev,LED_RED);
 	freenect_set_depth_callback(f_dev, depth_cb);
 	freenect_set_video_callback(f_dev, video_cb);
 	freenect_set_video_mode(f_dev, freenect_find_video_mode(current_resolution, current_format));
@@ -436,7 +434,7 @@ int main(int argc, char **argv)
 	}
 
 	freenect_set_log_level(f_ctx, FREENECT_LOG_DEBUG);
-	freenect_select_subdevices(f_ctx, (freenect_device_flags)(FREENECT_DEVICE_MOTOR | FREENECT_DEVICE_CAMERA));
+	freenect_select_subdevices(f_ctx, FREENECT_DEVICE_CAMERA);
 
 	int nr_devices = freenect_num_devices (f_ctx);
 	printf ("Number of devices found: %d\n", nr_devices);
